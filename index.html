@@ -328,6 +328,10 @@ legend{font-family:'Space Grotesk';font-size:13.5px;font-weight:600;padding:0 0 
         <span id="regLogoText">Logo uploaden (optioneel)</span>
         <input type="file" id="regLogoFile" accept="image/*" style="display:none">
       </label>
+      <label class="logoUploadLabel" for="regAccentColor" style="cursor:default;">
+        <input type="color" id="regAccentColor" value="#3c5f8f" style="width:34px;height:34px;padding:0;border:none;border-radius:6px;cursor:pointer;flex:none;">
+        <span>Kleur op je facturen</span>
+      </label>
       <input type="email" id="regEmail" placeholder="E-mailadres" autocomplete="username">
       <input type="password" id="regPwd" placeholder="Wachtwoord (minstens 6 tekens)" autocomplete="new-password">
       <input type="password" id="regPwd2" placeholder="Wachtwoord bevestigen" autocomplete="new-password">
@@ -439,6 +443,12 @@ function resizeImageFile(file, maxDim){
   });
 }
 function logoImgType(dataUri){ return /^data:image\/jpeg/i.test(dataUri||'') ? 'JPEG' : 'PNG'; }
+function hexToRgb(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex||'').trim());
+  if(!m) return [60,95,143];
+  const n = parseInt(m[1],16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
 function applyBranding(){
   const logo = (state.company && state.company.logo) || LOGO_DATA_URI;
   ['sidebarLogo','drawerLogo','topbarLogo'].forEach(id=>{ const el = document.getElementById(id); if(el) el.src = logo; });
@@ -572,6 +582,7 @@ function defaultCompany(){
     kvk: '', btwNummer: '', iban: '', ibanName: '',
     email: '', phone: '', website: '',
     invoicePrefix: 'WOLF',
+    accentColor: '#3c5f8f',
     nextNumber: 1,
     defaultVat: 21,
     kmRate: 0.25,
@@ -1631,7 +1642,7 @@ function invoiceDocHtml(inv){
         ${company.phone?`${esc(company.phone)}`:''}
       </div>
     </div>
-    <h2 class="idoc-title ${inv.isCredit?'credit':''}">${inv.isCredit?'Creditfactuur':(inv.number?'Factuur':'Conceptfactuur')} ${esc(displayInvoiceNumber(inv))}</h2>
+    <h2 class="idoc-title" style="color:${inv.isCredit?'#b34848':esc(company.accentColor||'#3c5f8f')}">${inv.isCredit?'Creditfactuur':(inv.number?'Factuur':'Conceptfactuur')} ${esc(displayInvoiceNumber(inv))}</h2>
     <div class="idoc-meta">
       Datum: ${fmtDate(inv.date)}${inv.isCredit?'':` &nbsp;•&nbsp; Vervaldatum: ${fmtDate(inv.dueDate)}`}
       ${inv.creditForNumber?`<br>Creditering van factuur ${esc(inv.creditForNumber)}`:''}
@@ -1804,7 +1815,7 @@ function buildInvoicePdf(inv){
 
   y = 46;
   doc.setFont('helvetica','bold'); doc.setFontSize(20);
-  doc.setTextColor(...(inv.isCredit?[179,72,72]:[60,95,143]));
+  doc.setTextColor(...(inv.isCredit?[179,72,72]:hexToRgb(company.accentColor)));
   doc.text(`${inv.isCredit?'Creditfactuur':'Factuur'} ${displayInvoiceNumber(inv)}`, marginX, y);
   y+=7;
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90,90,90);
@@ -2068,6 +2079,12 @@ function renderInstellingen(){
           <input type="file" id="brandLogoFile" accept="image/*" style="display:none">
         </label>
       </div>
+      <div style="padding:0 22px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);">
+        <div style="padding-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex:1;">
+          <input type="color" id="brandAccentColor" value="${esc(c.accentColor||'#3c5f8f')}" style="width:44px;height:36px;padding:0;border:1px solid var(--line);border-radius:7px;cursor:pointer;">
+          <p class="hint" style="margin:0;flex:1;min-width:200px;">Deze kleur wordt gebruikt voor de titel op je facturen (bijv. "Factuur 2026-001").</p>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -2111,6 +2128,13 @@ function wireInstellingen(){
       applyBranding();
       showToast('Logo bijgewerkt');
     }catch(e){ showToast('Logo uploaden mislukt: ' + e.message); }
+  });
+  const brandAccentColor = document.getElementById('brandAccentColor');
+  if(brandAccentColor) brandAccentColor.addEventListener('change', async ()=>{
+    const val = brandAccentColor.value;
+    await updateCompany({ accentColor: val });
+    state.company.accentColor = val;
+    showToast('Kleur bijgewerkt');
   });
   const wipeBtn = document.getElementById('wipeDataBtn');
   if(wipeBtn) wipeBtn.addEventListener('click', ()=>{
@@ -2325,6 +2349,7 @@ const regCompanyNameInput = document.getElementById('regCompanyName');
 const regLogoFile = document.getElementById('regLogoFile');
 const regLogoPreview = document.getElementById('regLogoPreview');
 const regLogoText = document.getElementById('regLogoText');
+const regAccentColorInput = document.getElementById('regAccentColor');
 const regEmailInput = document.getElementById('regEmail');
 const regPwdInput = document.getElementById('regPwd');
 const regPwd2Input = document.getElementById('regPwd2');
@@ -2360,6 +2385,7 @@ regLogoFile.addEventListener('change', async ()=>{
 async function createTenantCompany(setup){
   const company = Object.assign(defaultCompany(), { name: setup.name });
   if(setup.logo){ company.logo = setup.logo; company.logoRatio = setup.logoRatio; }
+  if(setup.accentColor){ company.accentColor = setup.accentColor; }
   await db.doc('tenants/'+tenantId+'/settings/company').set(company);
 }
 
@@ -2374,7 +2400,7 @@ function tryRegister(){
   if(pwd.length < 6){ regError.textContent = 'Wachtwoord moet minstens 6 tekens zijn.'; return; }
   if(pwd !== pwd2){ regError.textContent = 'Wachtwoorden komen niet overeen.'; return; }
   regBtn.disabled = true; regError.textContent = 'Account aanmaken…';
-  pendingTenantSetup = { name, logo: regLogoData ? regLogoData.dataUri : null, logoRatio: regLogoData ? regLogoData.ratio : null };
+  pendingTenantSetup = { name, logo: regLogoData ? regLogoData.dataUri : null, logoRatio: regLogoData ? regLogoData.ratio : null, accentColor: regAccentColorInput.value || '#3c5f8f' };
   Promise.race([
     fbAuth.createUserWithEmailAndPassword(email, pwd),
     new Promise((_, reject)=> setTimeout(()=> reject({code:'timeout'}), 10000))
