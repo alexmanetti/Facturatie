@@ -320,6 +320,7 @@ legend{font-family:'Space Grotesk';font-size:13.5px;font-weight:600;padding:0 0 
       <input type="password" id="loginGateInput" placeholder="Wachtwoord" autocomplete="current-password">
       <div id="loginGateError"></div>
       <button id="loginGateBtn" type="button">Inloggen</button>
+      <button type="button" id="forgotPwdBtn" style="width:100%;background:none;border:none;color:var(--ink-soft);font-size:12.5px;margin-top:10px;cursor:pointer;padding:4px;">Wachtwoord vergeten?</button>
     </div>
     <div id="registerPane" class="hidden">
       <input type="text" id="regCompanyName" placeholder="Bedrijfsnaam">
@@ -2317,6 +2318,7 @@ function authErrorMessage(err){
   return 'Inloggen mislukt: ' + (err && err.message ? err.message : 'onbekende fout');
 }
 function tryUnlock(){
+  gateError.style.color = '';
   if(!fbAuth){ gateError.textContent = 'Inloggen is nu niet beschikbaar, probeer het later opnieuw.'; return; }
   const email = (gateEmailInput.value||'').trim();
   const pwd = gateInput.value;
@@ -2339,6 +2341,26 @@ function tryUnlock(){
 gateBtn.addEventListener('click', tryUnlock);
 gateInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') tryUnlock(); });
 gateEmailInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') gateInput.focus(); });
+
+const forgotPwdBtn = document.getElementById('forgotPwdBtn');
+forgotPwdBtn.addEventListener('click', ()=>{
+  if(!fbAuth){ gateError.textContent = 'Dit is nu niet beschikbaar, probeer het later opnieuw.'; return; }
+  const email = (gateEmailInput.value||'').trim();
+  if(!email){ gateError.textContent = 'Vul eerst je e-mailadres in, dan sturen we een resetlink.'; gateEmailInput.focus(); return; }
+  forgotPwdBtn.disabled = true; gateError.textContent = 'Bezig met versturen…';
+  fbAuth.sendPasswordResetEmail(email)
+    .then(()=>{
+      forgotPwdBtn.disabled = false;
+      gateError.textContent = '';
+      gateError.style.color = 'var(--success)';
+      gateError.textContent = `We hebben een e-mail gestuurd naar ${email} om je wachtwoord opnieuw in te stellen.`;
+    })
+    .catch(err=>{
+      forgotPwdBtn.disabled = false;
+      gateError.style.color = '';
+      gateError.textContent = authErrorMessage(err);
+    });
+});
 
 /* ---------------- registration pane (self-service, fully isolated new tenant) ---------------- */
 const gateTabLogin = document.getElementById('gateTabLogin');
