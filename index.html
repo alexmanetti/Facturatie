@@ -8,9 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.14.0/firebase-app-compat.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.14.0/firebase-auth-compat.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.14.0/firebase-firestore-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-auth-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-firestore-compat.min.js"></script>
 <style>
 :root{
   --ink:#151821;
@@ -294,6 +294,14 @@ legend{font-family:'Space Grotesk';font-size:13.5px;font-weight:600;padding:0 0 
 #loginGateBox button{width:100%;padding:11px 12px;border:none;border-radius:var(--radius-sm);background:var(--brand-blue-deep);color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
 #loginGateBox button:active{opacity:0.85;}
 #loginGateError{color:var(--danger);font-size:13px;margin:-4px 0 12px;min-height:16px;}
+#regError{color:var(--danger);font-size:13px;margin:-4px 0 12px;min-height:16px;}
+.gateTabs{display:flex;gap:4px;margin-bottom:18px;background:var(--surface-2);border-radius:9px;padding:4px;}
+.gateTabs button{flex:1;border:none;background:transparent;padding:8px 0;border-radius:7px;font-size:13.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;}
+.gateTabs button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+#registerPane.hidden{display:none;}
+.logoUploadLabel{display:flex;align-items:center;gap:10px;border:1px dashed var(--line);border-radius:var(--radius-sm);padding:9px 11px;margin-bottom:12px;cursor:pointer;font-size:12.5px;color:var(--ink-soft);text-align:left;}
+.logoUploadLabel img{width:34px;height:34px;object-fit:contain;border-radius:6px;background:var(--surface-2);flex:none;}
+.logoUploadLabel img.hidden{display:none;}
 #appRoot{display:none;}
 #appRoot.unlocked{display:contents;}
 </style>
@@ -302,12 +310,30 @@ legend{font-family:'Space Grotesk';font-size:13.5px;font-weight:600;padding:0 0 
 
 <div id="loginGate">
   <div id="loginGateBox">
-    <img id="loginGateLogo" alt="WOLF">
-    <h2>Log in</h2>
-    <input type="email" id="loginGateEmail" placeholder="E-mailadres" autocomplete="username">
-    <input type="password" id="loginGateInput" placeholder="Wachtwoord" autocomplete="current-password">
-    <div id="loginGateError"></div>
-    <button id="loginGateBtn" type="button">Inloggen</button>
+    <img id="loginGateLogo" alt="Facturatie">
+    <div class="gateTabs">
+      <button type="button" class="active" id="gateTabLogin">Inloggen</button>
+      <button type="button" id="gateTabRegister">Registreren</button>
+    </div>
+    <div id="loginPane">
+      <input type="email" id="loginGateEmail" placeholder="E-mailadres" autocomplete="username">
+      <input type="password" id="loginGateInput" placeholder="Wachtwoord" autocomplete="current-password">
+      <div id="loginGateError"></div>
+      <button id="loginGateBtn" type="button">Inloggen</button>
+    </div>
+    <div id="registerPane" class="hidden">
+      <input type="text" id="regCompanyName" placeholder="Bedrijfsnaam">
+      <label class="logoUploadLabel" id="regLogoLabel">
+        <img id="regLogoPreview" class="hidden" alt="">
+        <span id="regLogoText">Logo uploaden (optioneel)</span>
+        <input type="file" id="regLogoFile" accept="image/*" style="display:none">
+      </label>
+      <input type="email" id="regEmail" placeholder="E-mailadres" autocomplete="username">
+      <input type="password" id="regPwd" placeholder="Wachtwoord (minstens 6 tekens)" autocomplete="new-password">
+      <input type="password" id="regPwd2" placeholder="Wachtwoord bevestigen" autocomplete="new-password">
+      <div id="regError"></div>
+      <button id="regBtn" type="button">Account aanmaken</button>
+    </div>
   </div>
 </div>
 
@@ -380,13 +406,43 @@ function showToast(msg){
 }
 window.addEventListener('unhandledrejection', (event)=>{
   const msg = (event.reason && event.reason.message) ? event.reason.message : String(event.reason||'onbekende fout');
-  if(msg.includes('INTERNAL ASSERTION FAILED') || msg.includes('FIRESTORE')){
-    showToast('Tijdelijk verbindingsprobleem met de database. Ververs de pagina volledig en probeer het opnieuw.');
-  } else {
-    showToast('Opslaan mislukt: ' + msg + ' — probeer het opnieuw.');
-  }
+  showToast('Opslaan mislukt: ' + msg + ' — probeer het opnieuw.');
   console.error('Unhandled error in WOLF app:', event.reason);
 });
+
+/* resize an uploaded logo image to a reasonable size and return {dataUri, ratio (h/w)} */
+function resizeImageFile(file, maxDim){
+  maxDim = maxDim || 700;
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error('Kon bestand niet lezen'));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error('Kon afbeelding niet lezen'));
+      img.onload = ()=>{
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if(w<=0 || h<=0){ reject(new Error('Ongeldige afbeelding')); return; }
+        if(w > maxDim || h > maxDim){
+          if(w >= h){ h = Math.round(h * (maxDim/w)); w = maxDim; }
+          else { w = Math.round(w * (maxDim/h)); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUri = canvas.toDataURL('image/png');
+        resolve({ dataUri, ratio: h/w });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function logoImgType(dataUri){ return /^data:image\/jpeg/i.test(dataUri||'') ? 'JPEG' : 'PNG'; }
+function applyBranding(){
+  const logo = (state.company && state.company.logo) || LOGO_DATA_URI;
+  ['sidebarLogo','drawerLogo','topbarLogo'].forEach(id=>{ const el = document.getElementById(id); if(el) el.src = logo; });
+}
 
 /* ---------------- backend (Firebase Firestore, with localStorage fallback) ---------------- */
 const LS_PREFIX = 'wolf_fact_v1_';
@@ -401,13 +457,18 @@ const FIREBASE_CONFIG = {
 let db = null;
 let useDb = false;
 let fbAuth = null;
+let tenantId = null;        // Firebase Auth uid of the signed-in user
+let usesTenantPrefix = false; // true = isolated tenants/{tenantId}/... data, false = legacy shared top-level data
+let pendingTenantSetup = null; // {name, logo, logoRatio} set right before registering a brand-new account
+
+function companyDocPath(){ return usesTenantPrefix ? ('tenants/'+tenantId+'/settings/company') : 'settings/company'; }
+function collPath(name){ return usesTenantPrefix ? ('tenants/'+tenantId+'/'+name) : name; }
 
 function initFirebase(){
   try{
     if(!firebase.apps.length){ firebase.initializeApp(FIREBASE_CONFIG); }
     fbAuth = firebase.auth();
     db = firebase.firestore();
-    try{ db.settings({experimentalForceLongPolling: true, merge: true}); }catch(e2){}
     useDb = true;
   }catch(e){
     console.error('Firebase init failed:', e);
@@ -432,18 +493,18 @@ function withTimeout(promise, ms){
 }
 async function getCompany(){
   if(useDb){
-    try{ const snap = await withTimeout(db.doc('settings/company').get(), 8000); return snap.exists ? Object.assign({}, snap.data()) : null; }
+    try{ const snap = await withTimeout(db.doc(companyDocPath()).get(), 8000); return snap.exists ? Object.assign({}, snap.data()) : null; }
     catch(e){ console.error('getCompany failed:', e); return lsGetDoc('company'); }
   }
   return lsGetDoc('company');
 }
 async function saveCompanyFull(data){
-  if(useDb){ try{ await db.doc('settings/company').set(data); return; }catch(e){} }
+  if(useDb){ try{ await db.doc(companyDocPath()).set(data); return; }catch(e){} }
   lsSetDoc('company', data);
 }
 async function updateCompany(patch){
   if(useDb){
-    try{ await db.doc('settings/company').update(patch); return; }
+    try{ await db.doc(companyDocPath()).update(patch); return; }
     catch(e){ /* fall through to local merge */ }
   }
   const cur = lsGetDoc('company') || {};
@@ -453,7 +514,7 @@ async function updateCompany(patch){
 async function listCollection(name){
   if(useDb){
     try{
-      const snap = await withTimeout(db.collection(name).get(), 8000);
+      const snap = await withTimeout(db.collection(collPath(name)).get(), 8000);
       return snap.docs.map(d=>Object.assign({id:d.id}, d.data()));
     }catch(e){ console.error('listCollection('+name+') failed:', e); return lsGetAll(name); }
   }
@@ -463,7 +524,7 @@ async function addToCollection(name, data){
   const id = data.id || uid();
   const withId = Object.assign({}, data, {id});
   if(useDb){
-    await db.collection(name).doc(id).set(withId);
+    await db.collection(collPath(name)).doc(id).set(withId);
     return withId;
   }
   const arr = lsGetAll(name); arr.push(withId); lsSetAll(name, arr);
@@ -471,7 +532,7 @@ async function addToCollection(name, data){
 }
 async function updateInCollection(name, id, patch){
   if(useDb){
-    await db.collection(name).doc(id).update(patch);
+    await db.collection(collPath(name)).doc(id).update(patch);
     return;
   }
   const arr = lsGetAll(name);
@@ -480,7 +541,7 @@ async function updateInCollection(name, id, patch){
 }
 async function deleteFromCollection(name, id){
   if(useDb){
-    await db.collection(name).doc(id).delete();
+    await db.collection(collPath(name)).doc(id).delete();
     return;
   }
   let arr = lsGetAll(name);
@@ -1559,7 +1620,7 @@ function invoiceDocHtml(inv){
   const vatMap = invoiceVatBreakdown(inv);
   return `
     <div class="idoc-top">
-      <img src="${LOGO_DATA_URI}" alt="${esc(company.name)}">
+      <img src="${company.logo || LOGO_DATA_URI}" alt="${esc(company.name)}">
       <div class="idoc-company">
         <strong>${esc(company.name)}</strong><br>
         ${esc(company.address)||''}<br>
@@ -1721,7 +1782,11 @@ function buildInvoicePdf(inv){
   const pageW = 210, marginX = 20;
   let y = 20;
 
-  try{ doc.addImage(LOGO_DATA_URI_PDF, 'PNG', marginX, y-4, 84, 84*(337/1228)); }catch(e){}
+  try{
+    const logoUri = company.logo || LOGO_DATA_URI_PDF;
+    const logoRatio = company.logoRatio || (337/1228);
+    doc.addImage(logoUri, logoImgType(logoUri), marginX, y-4, 84, 84*logoRatio);
+  }catch(e){}
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
   const compLines = [company.name];
@@ -1995,9 +2060,13 @@ function renderInstellingen(){
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Huisstijl</h3></div>
-      <div style="padding:20px 22px;display:flex;align-items:center;gap:20px;">
-        <img src="${LOGO_DATA_URI}" style="height:50px" alt="Logo">
-        <p class="hint" style="margin:0;">Dit logo en kleurenschema zijn gebruikt op de facturen en in deze app.</p>
+      <div style="padding:20px 22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <img id="brandLogoPreview" src="${c.logo || LOGO_DATA_URI}" style="height:50px" alt="Logo">
+        <p class="hint" style="margin:0;flex:1;min-width:200px;">Dit logo wordt gebruikt op de facturen en in deze app.</p>
+        <label class="btn btn-sm" style="cursor:pointer;">
+          Logo wijzigen
+          <input type="file" id="brandLogoFile" accept="image/*" style="display:none">
+        </label>
       </div>
     </div>
   `;
@@ -2029,6 +2098,19 @@ function wireInstellingen(){
     state.company.nextNumber = val;
     showToast('Volgnummer opgeslagen');
     render();
+  });
+  const brandLogoFile = document.getElementById('brandLogoFile');
+  if(brandLogoFile) brandLogoFile.addEventListener('change', async ()=>{
+    const file = brandLogoFile.files && brandLogoFile.files[0];
+    if(!file) return;
+    try{
+      const { dataUri, ratio } = await resizeImageFile(file, 700);
+      await updateCompany({ logo: dataUri, logoRatio: ratio });
+      state.company.logo = dataUri; state.company.logoRatio = ratio;
+      document.getElementById('brandLogoPreview').src = dataUri;
+      applyBranding();
+      showToast('Logo bijgewerkt');
+    }catch(e){ showToast('Logo uploaden mislukt: ' + e.message); }
   });
   const wipeBtn = document.getElementById('wipeDataBtn');
   if(wipeBtn) wipeBtn.addEventListener('click', ()=>{
@@ -2162,6 +2244,7 @@ async function boot(){
   await initBackend();
   if(!useDb){ state.storageWarning = true; }
   await loadAll();
+  applyBranding();
   renderNav();
   render();
 }
@@ -2190,6 +2273,7 @@ function lockApp(){
   closeDrawer();
   document.getElementById('modalOverlay').classList.add('hidden');
   if(fbAuth && fbAuth.currentUser){ fbAuth.signOut().catch(()=>{}); }
+  document.getElementById('gateTabLogin').click();
   setTimeout(()=>gateEmailInput.focus(), 50);
 }
 function unlockApp(){
@@ -2205,6 +2289,8 @@ function authErrorMessage(err){
   if(code.includes('invalid-email')) return 'Vul een geldig e-mailadres in.';
   if(code.includes('too-many-requests')) return 'Te veel pogingen, probeer het over een paar minuten opnieuw.';
   if(code.includes('network-request-failed')) return 'Geen verbinding — check je internet.';
+  if(code.includes('email-already-in-use')) return 'Dit e-mailadres is al in gebruik. Log in of gebruik een ander e-mailadres.';
+  if(code.includes('weak-password')) return 'Wachtwoord is te zwak (minstens 6 tekens).';
   return 'Inloggen mislukt: ' + (err && err.message ? err.message : 'onbekende fout');
 }
 function tryUnlock(){
@@ -2231,6 +2317,83 @@ gateBtn.addEventListener('click', tryUnlock);
 gateInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') tryUnlock(); });
 gateEmailInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') gateInput.focus(); });
 
+/* ---------------- registration pane (self-service, fully isolated new tenant) ---------------- */
+const gateTabLogin = document.getElementById('gateTabLogin');
+const gateTabRegister = document.getElementById('gateTabRegister');
+const loginPane = document.getElementById('loginPane');
+const registerPane = document.getElementById('registerPane');
+const regCompanyNameInput = document.getElementById('regCompanyName');
+const regLogoFile = document.getElementById('regLogoFile');
+const regLogoPreview = document.getElementById('regLogoPreview');
+const regLogoText = document.getElementById('regLogoText');
+const regEmailInput = document.getElementById('regEmail');
+const regPwdInput = document.getElementById('regPwd');
+const regPwd2Input = document.getElementById('regPwd2');
+const regError = document.getElementById('regError');
+const regBtn = document.getElementById('regBtn');
+let regLogoData = null; // { dataUri, ratio } once a logo is chosen
+
+function showLoginPane(){
+  gateTabLogin.classList.add('active'); gateTabRegister.classList.remove('active');
+  loginPane.classList.remove('hidden'); registerPane.classList.add('hidden');
+  gateError.textContent = '';
+}
+function showRegisterPane(){
+  gateTabRegister.classList.add('active'); gateTabLogin.classList.remove('active');
+  registerPane.classList.remove('hidden'); loginPane.classList.add('hidden');
+  regError.textContent = '';
+}
+gateTabLogin.addEventListener('click', showLoginPane);
+gateTabRegister.addEventListener('click', showRegisterPane);
+
+regLogoFile.addEventListener('change', async ()=>{
+  const file = regLogoFile.files && regLogoFile.files[0];
+  if(!file) return;
+  try{
+    const { dataUri, ratio } = await resizeImageFile(file, 700);
+    regLogoData = { dataUri, ratio };
+    regLogoPreview.src = dataUri;
+    regLogoPreview.classList.remove('hidden');
+    regLogoText.textContent = 'Logo gekozen — klik om te wijzigen';
+  }catch(e){ regError.textContent = 'Kon logo niet laden: ' + e.message; }
+});
+
+async function createTenantCompany(setup){
+  const company = Object.assign(defaultCompany(), { name: setup.name });
+  if(setup.logo){ company.logo = setup.logo; company.logoRatio = setup.logoRatio; }
+  await db.doc('tenants/'+tenantId+'/settings/company').set(company);
+}
+
+function tryRegister(){
+  if(!fbAuth){ regError.textContent = 'Registreren is nu niet beschikbaar, probeer het later opnieuw.'; return; }
+  const name = (regCompanyNameInput.value||'').trim();
+  const email = (regEmailInput.value||'').trim();
+  const pwd = regPwdInput.value;
+  const pwd2 = regPwd2Input.value;
+  if(!name){ regError.textContent = 'Vul een bedrijfsnaam in.'; return; }
+  if(!email || !pwd){ regError.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
+  if(pwd.length < 6){ regError.textContent = 'Wachtwoord moet minstens 6 tekens zijn.'; return; }
+  if(pwd !== pwd2){ regError.textContent = 'Wachtwoorden komen niet overeen.'; return; }
+  regBtn.disabled = true; regError.textContent = 'Account aanmaken…';
+  pendingTenantSetup = { name, logo: regLogoData ? regLogoData.dataUri : null, logoRatio: regLogoData ? regLogoData.ratio : null };
+  Promise.race([
+    fbAuth.createUserWithEmailAndPassword(email, pwd),
+    new Promise((_, reject)=> setTimeout(()=> reject({code:'timeout'}), 10000))
+  ])
+    .then(()=>{ regBtn.disabled = false; regError.textContent = ''; })
+    .catch(err=>{
+      pendingTenantSetup = null;
+      regBtn.disabled = false;
+      regError.textContent = err && err.code === 'timeout'
+        ? 'Account aanmaken duurt te lang — mogelijk een verbindingsprobleem. Probeer het opnieuw.'
+        : authErrorMessage(err);
+    });
+}
+regBtn.addEventListener('click', tryRegister);
+[regCompanyNameInput, regEmailInput, regPwdInput, regPwd2Input].forEach(el=>{
+  el.addEventListener('keydown', (e)=>{ if(e.key==='Enter') tryRegister(); });
+});
+
 const logoutDesktopBtn = document.getElementById('logoutBtnDesktop');
 const logoutMobileBtn = document.getElementById('logoutBtnMobile');
 if(logoutDesktopBtn) logoutDesktopBtn.addEventListener('click', lockApp);
@@ -2251,10 +2414,25 @@ setInterval(()=>{
 }, 30000);
 
 if(fbAuth){
-  fbAuth.onAuthStateChanged(user=>{
+  fbAuth.onAuthStateChanged(async user=>{
     if(user){
+      tenantId = user.uid;
+      try{
+        if(pendingTenantSetup){
+          // brand-new self-service account: always isolated under its own tenant path
+          usesTenantPrefix = true;
+          const setup = pendingTenantSetup; pendingTenantSetup = null;
+          await createTenantCompany(setup);
+        } else {
+          // existing login: isolated only if this uid already has its own tenant data,
+          // otherwise fall back to the original shared data (keeps existing accounts working unchanged)
+          const snap = await db.doc('tenants/'+tenantId+'/settings/company').get();
+          usesTenantPrefix = !!(snap && snap.exists);
+        }
+      }catch(e){ console.error('Tenant-detectie mislukt:', e); usesTenantPrefix = false; }
       unlockApp();
     } else {
+      tenantId = null; usesTenantPrefix = false;
       gateEl.classList.remove('hidden');
       appRootEl.classList.remove('unlocked');
       gateEmailInput.focus();
