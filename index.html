@@ -97,7 +97,7 @@ a{color:var(--brand-blue-deep);}
   overflow-y:auto;
 }
 #sidebar .logowrap{padding:6px 8px 20px;}
-#sidebar .logowrap img{width:100%;max-width:150px;display:block;}
+#sidebar .logowrap img{width:100%;max-width:150px;max-height:56px;object-fit:contain;object-position:left center;display:block;}
 .navlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;flex:1;}
 .navlist button{
   width:100%;text-align:left;background:none;border:none;color:#c4cddc;
@@ -1796,8 +1796,11 @@ function buildInvoicePdf(inv){
 
   try{
     const logoUri = company.logo || LOGO_DATA_URI_PDF;
-    const logoRatio = company.logoRatio || (337/1228);
-    doc.addImage(logoUri, logoImgType(logoUri), marginX, y-4, 84, 84*logoRatio);
+    const logoRatio = company.logoRatio || (337/1228); // height / width
+    const maxLogoW = 60, maxLogoH = 22; // mm — bounding box so the logo never overlaps the title below it
+    let logoW = maxLogoW, logoH = maxLogoW * logoRatio;
+    if(logoH > maxLogoH){ logoH = maxLogoH; logoW = maxLogoH / logoRatio; }
+    doc.addImage(logoUri, logoImgType(logoUri), marginX, y-4, logoW, logoH);
   }catch(e){}
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
