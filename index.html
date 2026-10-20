@@ -584,6 +584,9 @@ function defaultCompany(){
     email: '', phone: '', website: '',
     invoicePrefix: 'WOLF',
     accentColor: '#3c5f8f',
+    logoPosition: 'left',
+    logoSize: 'medium',
+    fontStyle: 'helvetica',
     nextNumber: 1,
     defaultVat: 21,
     kmRate: 0.25,
@@ -1630,10 +1633,18 @@ function invoiceDocHtml(inv){
   const cust = byId(state.customers, inv.customerId) || {};
   const company = state.company;
   const vatMap = invoiceVatBreakdown(inv);
+  const logoPx = ({small:60, medium:90, large:120})[company.logoSize] || 90;
+  const centered = company.logoPosition === 'center';
+  const topStyle = centered
+    ? 'display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:34px;gap:14px;'
+    : 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:34px;gap:20px;';
+  const fontFamilyMap = { times:"Georgia,'Times New Roman',serif", courier:"'Courier New',Courier,monospace" };
+  const docFont = fontFamilyMap[company.fontStyle];
   return `
-    <div class="idoc-top">
-      <img src="${company.logo || LOGO_DATA_URI}" alt="${esc(company.name)}">
-      <div class="idoc-company">
+    <div${docFont?` style="font-family:${docFont};"`:''}>
+    <div class="idoc-top" style="${topStyle}">
+      <img src="${company.logo || LOGO_DATA_URI}" alt="${esc(company.name)}" style="height:${logoPx}px;max-width:${centered?'320px':'260px'};object-fit:contain;${centered?'object-position:center;':'object-position:left center;'}">
+      <div class="idoc-company" style="${centered?'text-align:center;':''}">
         <strong>${esc(company.name)}</strong><br>
         ${esc(company.address)||''}<br>
         ${esc(company.postcode)||''} ${esc(company.city)||''}<br>
@@ -1643,7 +1654,7 @@ function invoiceDocHtml(inv){
         ${company.phone?`${esc(company.phone)}`:''}
       </div>
     </div>
-    <h2 class="idoc-title" style="color:${inv.isCredit?'#b34848':esc(company.accentColor||'#3c5f8f')}">${inv.isCredit?'Creditfactuur':(inv.number?'Factuur':'Conceptfactuur')} ${esc(displayInvoiceNumber(inv))}</h2>
+    <h2 class="idoc-title" style="color:${inv.isCredit?'#b34848':esc(company.accentColor||'#3c5f8f')};${centered?'text-align:center;':''}">${inv.isCredit?'Creditfactuur':(inv.number?'Factuur':'Conceptfactuur')} ${esc(displayInvoiceNumber(inv))}</h2>
     <div class="idoc-meta">
       Datum: ${fmtDate(inv.date)}${inv.isCredit?'':` &nbsp;•&nbsp; Vervaldatum: ${fmtDate(inv.dueDate)}`}
       ${inv.creditForNumber?`<br>Creditering van factuur ${esc(inv.creditForNumber)}`:''}
@@ -1676,6 +1687,7 @@ function invoiceDocHtml(inv){
       <div class="row total"><span>Totaal</span><span>${fmtMoney(invoiceGrandTotal(inv))}</span></div>
     </div>
     <div class="idoc-footer">${esc(company.iban? 'IBAN '+company.iban+(company.ibanName?' t.n.v. '+company.ibanName:'') : '')}${company.iban && company.footerNote ? '\\n' : ''}${esc(company.footerNote||'')}</div>
+    </div>
   `;
 }
 
@@ -1792,18 +1804,23 @@ function buildInvoicePdf(inv){
   const company = state.company;
   const cust = byId(state.customers, inv.customerId) || {};
   const pageW = 210, marginX = 20;
+  const pdfFont = ['helvetica','times','courier'].includes(company.fontStyle) ? company.fontStyle : 'helvetica';
   let y = 20;
 
+  const centered = company.logoPosition === 'center';
+  const sizeMap = { small:{w:40,h:16}, medium:{w:60,h:22}, large:{w:80,h:28} };
+  const { w: maxLogoW, h: maxLogoH } = sizeMap[company.logoSize] || sizeMap.medium;
+  let logoW = 0, logoH = 0;
   try{
     const logoUri = company.logo || LOGO_DATA_URI_PDF;
     const logoRatio = company.logoRatio || (337/1228); // height / width
-    const maxLogoW = 60, maxLogoH = 22; // mm — bounding box so the logo never overlaps the title below it
-    let logoW = maxLogoW, logoH = maxLogoW * logoRatio;
+    logoW = maxLogoW; logoH = maxLogoW * logoRatio;
     if(logoH > maxLogoH){ logoH = maxLogoH; logoW = maxLogoH / logoRatio; }
-    doc.addImage(logoUri, logoImgType(logoUri), marginX, y-4, logoW, logoH);
+    const logoX = centered ? (pageW - logoW)/2 : marginX;
+    doc.addImage(logoUri, logoImgType(logoUri), logoX, y-4, logoW, logoH);
   }catch(e){}
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
+  doc.setFont(pdfFont,'normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
   const compLines = [company.name];
   if(company.address) compLines.push(company.address);
   if(company.postcode||company.city) compLines.push(`${company.postcode||''} ${company.city||''}`.trim());
@@ -1811,36 +1828,46 @@ function buildInvoicePdf(inv){
   if(company.btwNummer) compLines.push(`BTW ${company.btwNummer}`);
   if(company.email) compLines.push(company.email);
   if(company.phone) compLines.push(company.phone);
-  doc.setFont('helvetica','bold'); doc.setTextColor(20,20,20);
-  doc.text(company.name||'', pageW-marginX, y, {align:'right'});
-  doc.setFont('helvetica','normal'); doc.setTextColor(70,70,70);
-  let cy = y+5;
-  compLines.slice(1).forEach(line=>{ doc.text(line, pageW-marginX, cy, {align:'right'}); cy+=4.3; });
 
-  y = 46;
-  doc.setFont('helvetica','bold'); doc.setFontSize(20);
+  if(centered){
+    let cy = y - 4 + logoH + 6;
+    doc.setFont(pdfFont,'bold'); doc.setTextColor(20,20,20);
+    doc.text(company.name||'', pageW/2, cy, {align:'center'});
+    doc.setFont(pdfFont,'normal'); doc.setTextColor(70,70,70);
+    cy += 4.3;
+    compLines.slice(1).forEach(line=>{ doc.text(line, pageW/2, cy, {align:'center'}); cy+=4.3; });
+    y = Math.max(cy + 6, 46);
+  } else {
+    doc.setFont(pdfFont,'bold'); doc.setTextColor(20,20,20);
+    doc.text(company.name||'', pageW-marginX, y, {align:'right'});
+    doc.setFont(pdfFont,'normal'); doc.setTextColor(70,70,70);
+    let cy = y+5;
+    compLines.slice(1).forEach(line=>{ doc.text(line, pageW-marginX, cy, {align:'right'}); cy+=4.3; });
+    y = Math.max(46, y-4+logoH+6);
+  }
+  doc.setFont(pdfFont,'bold'); doc.setFontSize(20);
   doc.setTextColor(...(inv.isCredit?[179,72,72]:hexToRgb(company.accentColor)));
   doc.text(`${inv.isCredit?'Creditfactuur':'Factuur'} ${displayInvoiceNumber(inv)}`, marginX, y);
   y+=7;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90,90,90);
+  doc.setFont(pdfFont,'normal'); doc.setFontSize(9.5); doc.setTextColor(90,90,90);
   let metaLine = `Datum: ${fmtDate(inv.date)}`;
   if(!inv.isCredit) metaLine += `    Vervaldatum: ${fmtDate(inv.dueDate)}`;
   doc.text(metaLine, marginX, y);
   if(inv.creditForNumber){ y+=5; doc.text(`Creditering van factuur ${inv.creditForNumber}`, marginX, y); }
   y+=10;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(140,140,140);
+  doc.setFont(pdfFont,'bold'); doc.setFontSize(8.5); doc.setTextColor(140,140,140);
   doc.text('AAN', marginX, y); y+=5;
-  doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+  doc.setFont(pdfFont,'bold'); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
   doc.text(cust.name||'', marginX, y); y+=5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(70,70,70);
+  doc.setFont(pdfFont,'normal'); doc.setFontSize(9.5); doc.setTextColor(70,70,70);
   if(cust.contactName){ doc.text(`t.a.v. ${cust.contactName}`, marginX, y); y+=4.3; }
   if(cust.address){ doc.text(cust.address, marginX, y); y+=4.3; }
   if(cust.postcode||cust.city){ doc.text(`${cust.postcode||''} ${cust.city||''}`.trim(), marginX, y); y+=4.3; }
   y+=8;
 
   const colX = {desc:marginX, qty:108, unit:113, price:150, vat:172, total:190};
-  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+  doc.setFont(pdfFont,'bold'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
   doc.text('OMSCHRIJVING', colX.desc, y);
   doc.text('AANTAL', colX.qty, y, {align:'right'});
   doc.text('EENH.', colX.unit, y);
@@ -1852,7 +1879,7 @@ function buildInvoicePdf(inv){
   doc.line(marginX, y, pageW-marginX, y);
   y+=6;
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(30,30,30);
+  doc.setFont(pdfFont,'normal'); doc.setFontSize(9.5); doc.setTextColor(30,30,30);
   (inv.lines||[]).forEach(l=>{
     const descLines = doc.splitTextToSize(l.description||'', 78);
     const rowH = Math.max(descLines.length*4.3, 5);
@@ -1870,7 +1897,7 @@ function buildInvoicePdf(inv){
   const vatMap = invoiceVatBreakdown(inv);
   const totalsX1 = 140, totalsX2 = 190;
   function totalRow(label, value, bold){
-    doc.setFont('helvetica', bold?'bold':'normal'); doc.setFontSize(bold?11:9.5);
+    doc.setFont(pdfFont, bold?'bold':'normal'); doc.setFontSize(bold?11:9.5);
     doc.setTextColor(bold?20:80, bold?20:80, bold?20:80);
     doc.text(label, totalsX1, y);
     doc.text(value, totalsX2, y, {align:'right'});
@@ -1885,7 +1912,7 @@ function buildInvoicePdf(inv){
   totalRow('Totaal', fmtMoney(invoiceGrandTotal(inv)), true);
 
   y += 10;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+  doc.setFont(pdfFont,'normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
   const footerParts = [];
   if(company.iban) footerParts.push(`IBAN ${company.iban}${company.ibanName? ' t.n.v. '+company.ibanName:''}`);
   if(company.footerNote) footerParts.push(company.footerNote);
@@ -2089,6 +2116,33 @@ function renderInstellingen(){
           <p class="hint" style="margin:0;flex:1;min-width:200px;">Deze kleur wordt gebruikt voor de titel op je facturen (bijv. "Factuur 2026-001").</p>
         </div>
       </div>
+      <div style="padding:0 22px 20px;border-top:1px solid var(--line);">
+        <div class="field-row" style="padding-top:18px;grid-template-columns:1fr 1fr 1fr;">
+          <div class="field" style="margin-bottom:0;">
+            <label>Logo-positie op de factuur</label>
+            <select id="brandLogoPosition">
+              <option value="left" ${c.logoPosition!=='center'?'selected':''}>Links (standaard)</option>
+              <option value="center" ${c.logoPosition==='center'?'selected':''}>Gecentreerd</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Logo-formaat</label>
+            <select id="brandLogoSize">
+              <option value="small" ${c.logoSize==='small'?'selected':''}>Klein</option>
+              <option value="medium" ${!c.logoSize||c.logoSize==='medium'?'selected':''}>Middel (standaard)</option>
+              <option value="large" ${c.logoSize==='large'?'selected':''}>Groot</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Lettertype op de factuur</label>
+            <select id="brandFontStyle">
+              <option value="helvetica" ${!c.fontStyle||c.fontStyle==='helvetica'?'selected':''}>Modern (standaard)</option>
+              <option value="times" ${c.fontStyle==='times'?'selected':''}>Klassiek</option>
+              <option value="courier" ${c.fontStyle==='courier'?'selected':''}>Technisch</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -2139,6 +2193,27 @@ function wireInstellingen(){
     await updateCompany({ accentColor: val });
     state.company.accentColor = val;
     showToast('Kleur bijgewerkt');
+  });
+  const brandLogoPosition = document.getElementById('brandLogoPosition');
+  if(brandLogoPosition) brandLogoPosition.addEventListener('change', async ()=>{
+    const val = brandLogoPosition.value;
+    await updateCompany({ logoPosition: val });
+    state.company.logoPosition = val;
+    showToast('Logo-positie bijgewerkt');
+  });
+  const brandLogoSize = document.getElementById('brandLogoSize');
+  if(brandLogoSize) brandLogoSize.addEventListener('change', async ()=>{
+    const val = brandLogoSize.value;
+    await updateCompany({ logoSize: val });
+    state.company.logoSize = val;
+    showToast('Logo-formaat bijgewerkt');
+  });
+  const brandFontStyle = document.getElementById('brandFontStyle');
+  if(brandFontStyle) brandFontStyle.addEventListener('change', async ()=>{
+    const val = brandFontStyle.value;
+    await updateCompany({ fontStyle: val });
+    state.company.fontStyle = val;
+    showToast('Lettertype bijgewerkt');
   });
   const wipeBtn = document.getElementById('wipeDataBtn');
   if(wipeBtn) wipeBtn.addEventListener('click', ()=>{
