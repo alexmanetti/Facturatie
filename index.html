@@ -734,6 +734,8 @@ function renderDashboard(){
   const monthTotal = state.invoices.filter(i=>i.status!=='concept' && (i.date||'').slice(0,7)===thisMonth)
     .reduce((s,i)=> s + (i.isCredit? -invoiceGrandTotal(i) : invoiceGrandTotal(i)), 0);
   const recent = state.invoices.slice(0,6);
+  const lateInvoices = openInvoices.filter(i=>i.dueDate && i.dueDate<todayStr())
+    .sort((a,b)=> (a.dueDate||'').localeCompare(b.dueDate||''));
 
   const currentYear = todayStr().slice(0,4);
   const finalizedThisYear = state.invoices.filter(i=>i.status!=='concept' && (i.date||'').slice(0,4)===currentYear);
@@ -787,6 +789,26 @@ function renderDashboard(){
         <div class="sub">gefactureerd (incl. credits)</div>
       </div>
     </div>
+    ${lateInvoices.length>0 ? `
+    <div class="panel" style="border-color:var(--danger);">
+      <div class="panel-head"><h3 style="color:var(--danger);">Te laat — ${lateInvoices.length} ${lateInvoices.length===1?'factuur':'facturen'} vervallen</h3></div>
+      <table>
+        <thead><tr><th>Nummer</th><th>Klant</th><th>Vervallen op</th><th class="num">Bedrag</th><th></th></tr></thead>
+        <tbody>
+          ${lateInvoices.map(inv=>{
+            const cust = byId(state.customers, inv.customerId);
+            const days = daysOverdue(inv);
+            return `<tr>
+              <td>${esc(displayInvoiceNumber(inv))}</td>
+              <td>${esc(customerName(inv.customerId))}</td>
+              <td>${fmtDate(inv.dueDate)} <span class="hint">(${days} ${days===1?'dag':'dagen'} geleden)</span></td>
+              <td class="num">${fmtMoney(invoiceGrandTotal(inv))}</td>
+              <td class="rowactions">${(cust&&cust.email)?`<button class="btn btn-sm" data-action="send-reminder" data-id="${inv.id}">${ICONS.mail} Stuur herinnering</button>`:`<span class="hint">geen e-mail</span>`}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
     <div class="panel">
       <div class="panel-head"><h3>Recente facturen</h3><button class="btn btn-sm btn-ghost" data-view="facturen">Alle facturen</button></div>
       ${recent.length===0 ? emptyState('Nog geen facturen','Maak je eerste factuur aan om ‘m hier te zien.') : `
@@ -1708,6 +1730,7 @@ function openInvoiceDetail(id){
     <div class="modal-foot" style="flex-wrap:wrap;justify-content:flex-start;gap:8px;">
       ${inv.number ? `<button class="btn" id="downloadPdfBtn">${ICONS.pdf} Download PDF</button>` : ''}
       ${(inv.number && cust.email)?`<button class="btn" id="mailBtn">${ICONS.mail} Verstuur per e-mail</button>`:''}
+      ${(status==='late' && cust.email)?`<button class="btn" id="reminderBtn" style="color:var(--danger);">${ICONS.mail} Stuur herinnering</button>`:''}
       ${!inv.isCredit && !inv.number ? `<button class="btn btn-primary" id="finalizeBtn">${ICONS.check} Definitief maken (nummer toekennen)</button>`:''}
       ${!inv.isCredit && inv.number && (inv.status==='verzonden') ? `<button class="btn" id="markPaidBtn">${ICONS.check} Markeer als betaald</button>`:''}
       ${!inv.isCredit && inv.number ? `<button class="btn" id="creditBtn">${ICONS.reverse} Creditfactuur maken</button>`:''}
@@ -1728,6 +1751,8 @@ function openInvoiceDetail(id){
   if(inv.number && cust.email){
     document.getElementById('mailBtn').addEventListener('click', ()=>showMailInstructions(inv, cust));
   }
+  const reminderBtn = document.getElementById('reminderBtn');
+  if(reminderBtn) reminderBtn.addEventListener('click', ()=>showReminderMailInstructions(inv, cust));
   const finalizeBtn = document.getElementById('finalizeBtn');
   if(finalizeBtn) finalizeBtn.addEventListener('click', ()=>{
     const year = new Date(inv.date).getFullYear();
@@ -2038,6 +2063,56 @@ function showMailInstructions(inv, cust){
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeModal));
   document.getElementById('mailStep1Btn').addEventListener('click', ()=>downloadInvoicePdf(inv));
 }
+
+/* ---- betalingsherinneringen ---- */
+function daysOverdue(inv){
+  if(!inv.dueDate) return 0;
+  const due = new Date(inv.dueDate+'T00:00:00');
+  const today = new Date(todayStr()+'T00:00:00');
+  return Math.max(0, Math.round((today-due)/(1000*60*60*24)));
+}
+function buildReminderMailtoUrl(inv, cust){
+  const days = daysOverdue(inv);
+  const subject = encodeURIComponent(`Betalingsherinnering — factuur ${displayInvoiceNumber(inv)} — ${state.company.name}`);
+  const body = encodeURIComponent(
+`Beste ${cust.contactName||cust.name||''},
+
+Bij navraag in onze administratie zien we dat factuur ${displayInvoiceNumber(inv)} van ${fmtDate(inv.date)}, ter waarde van ${fmtMoney(invoiceGrandTotal(inv))}, nog niet is voldaan. De betaaltermijn is op ${fmtDate(inv.dueDate)} verstreken (${days} ${days===1?'dag':'dagen'} geleden).
+
+Zou je het bedrag op korte termijn alsnog willen overmaken onder vermelding van het factuurnummer? De eerder verstuurde factuur vind je als bijlage bij deze e-mail (voeg de PDF hier zelf nogmaals toe).
+
+Heb je de factuur al betaald? Dan kun je dit bericht uiteraard als niet verzonden beschouwen.
+
+Met vriendelijke groet,
+${state.company.name}`
+  );
+  return `mailto:${cust.email}?subject=${subject}&body=${body}`;
+}
+function showReminderMailInstructions(inv, cust){
+  const mailtoUrl = buildReminderMailtoUrl(inv, cust);
+  openModal(`
+    <div class="modal-head"><h3>Betalingsherinnering versturen</h3></div>
+    <div class="modal-body">
+      <p style="margin:0 0 12px;">Factuur ${esc(displayInvoiceNumber(inv))} is ${daysOverdue(inv)} ${daysOverdue(inv)===1?'dag':'dagen'} te laat. Volg deze stappen om een herinnering te sturen:</p>
+      <ol style="margin:0 0 16px;padding-left:20px;line-height:1.7;">
+        <li><strong>Download eerst de PDF</strong> van de factuur (knop hieronder), zodat je ‘m opnieuw kunt bijvoegen.</li>
+        <li>Klik daarna op <strong>"Open e-mail"</strong> — je mailprogramma opent met adres, onderwerp en een herinneringstekst al ingevuld.</li>
+        <li>Voeg de PDF handmatig toe als bijlage.</li>
+        <li>Verstuur de e-mail.</li>
+      </ol>
+      <p class="hint" style="margin:0;">Opent er niets? Kopieer dan het adres <strong>${esc(cust.email)}</strong> en stuur zelf een nieuwe e-mail.</p>
+    </div>
+    <div class="modal-foot" style="flex-wrap:wrap;justify-content:flex-start;gap:8px;">
+      <button class="btn" id="reminderStep1Btn">${ICONS.pdf} 1. Download PDF</button>
+      <a class="btn" id="reminderStep2Btn" href="${mailtoUrl}" target="_top" rel="noopener">${ICONS.mail} 2. Open e-mail</a>
+      <span style="flex:1"></span>
+      <button class="btn" data-close>Sluiten</button>
+    </div>
+  `);
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeModal));
+  document.getElementById('reminderStep1Btn').addEventListener('click', ()=>downloadInvoicePdf(inv));
+}
+
 /* ================= INSTELLINGEN ================= */
 function renderInstellingen(){
   const c = state.company;
@@ -2338,6 +2413,14 @@ function wireContentEvents(){
   }));
   document.querySelectorAll('[data-action="view-invoice"]').forEach(el=>el.addEventListener('click', ()=>openInvoiceDetail(el.dataset.id)));
   document.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=>{ invoiceFilter = el.dataset.filter; render(); }));
+  document.querySelectorAll('[data-action="send-reminder"]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const inv = byId(state.invoices, el.dataset.id);
+    if(!inv) return;
+    const cust = byId(state.customers, inv.customerId);
+    if(!cust || !cust.email){ showToast('Deze klant heeft geen e-mailadres'); return; }
+    showReminderMailInstructions(inv, cust);
+  }));
 }
 
 /* ---------------- boot ---------------- */
