@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WOLF — Facturatie</title>
+<title>Facturatie</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -347,22 +347,22 @@ legend{font-family:'Space Grotesk';font-size:13.5px;font-weight:600;padding:0 0 
   <button class="hamburger" id="hamburgerBtn" aria-label="Menu">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
   </button>
-  <img id="topbarLogo" alt="WOLF">
+  <img id="topbarLogo" alt="Logo">
 </div>
 
 <div id="drawer-overlay"></div>
 <div id="drawer">
-  <div class="logowrap"><img id="drawerLogo" alt="WOLF" style="width:120px"></div>
+  <div class="logowrap"><img id="drawerLogo" alt="Logo" style="width:120px"></div>
   <ul class="navlist" id="navlistMobile"></ul>
   <button type="button" class="btn btn-sm" id="logoutBtnMobile" style="width:calc(100% - 32px);margin:12px 16px;">Uitloggen</button>
 </div>
 
 <div id="shell">
   <div id="sidebar">
-    <div class="logowrap"><img id="sidebarLogo" alt="WOLF"></div>
+    <div class="logowrap"><img id="sidebarLogo" alt="Logo"></div>
     <ul class="navlist" id="navlistDesktop"></ul>
     <div class="sidebar-foot">
-      <strong id="sidebarCompanyName">WOLF</strong>
+      <strong id="sidebarCompanyName">Facturatie</strong>
       Facturatie
       <button type="button" class="btn btn-sm" id="logoutBtnDesktop" style="width:100%;margin-top:10px;">Uitloggen</button>
     </div>
@@ -412,7 +412,7 @@ function showToast(msg){
 window.addEventListener('unhandledrejection', (event)=>{
   const msg = (event.reason && event.reason.message) ? event.reason.message : String(event.reason||'onbekende fout');
   showToast('Opslaan mislukt: ' + msg + ' — probeer het opnieuw.');
-  console.error('Unhandled error in WOLF app:', event.reason);
+  console.error('Unhandled error in Facturatie app:', event.reason);
 });
 
 /* resize an uploaded logo image to a reasonable size and return {dataUri, ratio (h/w)} */
@@ -577,12 +577,12 @@ const state = {
 
 function defaultCompany(){
   return {
-    name: 'WOLF',
+    name: 'Mijn bedrijf',
     contactName: '',
     address: '', postcode: '', city: '',
     kvk: '', btwNummer: '', iban: '', ibanName: '',
     email: '', phone: '', website: '',
-    invoicePrefix: 'WOLF',
+    invoicePrefix: 'FACT',
     accentColor: '#3c5f8f',
     logoPosition: 'left',
     logoSize: 'medium',
@@ -690,7 +690,7 @@ function renderNav(){
       b.addEventListener('click', ()=>{ setView(b.dataset.view); if(isMobile) closeDrawer(); });
     });
   });
-  document.getElementById('sidebarCompanyName').textContent = (state.company && state.company.name) || 'WOLF';
+  document.getElementById('sidebarCompanyName').textContent = (state.company && state.company.name) || 'Facturatie';
 }
 function openDrawer(){ document.getElementById('drawer').classList.add('open'); document.getElementById('drawer-overlay').classList.add('open'); }
 function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); document.getElementById('drawer-overlay').classList.remove('open'); }
